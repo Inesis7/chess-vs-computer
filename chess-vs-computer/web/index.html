@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Chess vs Computer</title>
+<style>
+:root{--bg:#f4f1ea;--fg:#222;--l:#eeeed2;--d:#769656;--sel:#f6f669;--hint:rgba(0,0,0,.3);--btn:#e2ddd0;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1c1c1a;--fg:#eee;--l:#b7b7a0;--d:#58733f;--sel:#c9c93f;--hint:rgba(255,255,255,.35);--btn:#33332f}}
+:root[data-theme="dark"]{--bg:#1c1c1a;--fg:#eee;--l:#b7b7a0;--d:#58733f;--sel:#c9c93f;--hint:rgba(255,255,255,.35);--btn:#33332f}
+html,body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+body{display:flex;flex-direction:column;align-items:center;gap:12px;padding:16px}
+h1{font-size:1.3rem;margin:0}
+#bar{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+select,button{font:inherit;padding:6px 10px;border-radius:6px;border:1px solid var(--hint);background:var(--btn);color:var(--fg);cursor:pointer}
+#st{font-weight:600;min-height:1.4em}
+#b{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));grid-template-rows:repeat(8,minmax(0,1fr));width:min(92vw,480px);aspect-ratio:1;border:2px solid var(--fg)}
+.s{display:flex;align-items:center;justify-content:center;font-size:min(9.5vw,52px);line-height:1;overflow:hidden;position:relative;cursor:pointer;user-select:none}
+.s.l{background:var(--l)}.s.d{background:var(--d)}
+.s.sel,.s.last{background:var(--sel)}
+.s.h::after{content:"";position:absolute;width:30%;height:30%;border-radius:50%;background:var(--hint)}
+.s.h.c::after{width:90%;height:90%;background:none;border:4px solid var(--hint)}
+.w{color:#fff;text-shadow:0 0 3px #000,0 0 2px #000}.k{color:#111;text-shadow:0 0 2px #ddd}
+</style></head><body>
+<h1>♞ Chess vs Computer</h1>
+<div id="bar">
+<select id="side"><option value="w">Play White</option><option value="b">Play Black</option></select>
+<select id="lvl"><option value="0">Easy (random)</option><option value="2" selected>Medium</option><option value="3">Hard</option></select>
+<button id="nw">New game</button><button id="un">Undo</button>
+</div>
+<div id="st"></div><div id="b"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<script>
+const g=new Chess(),$=id=>document.getElementById(id);
+let me='w',sel=null,hints=[],busy=false,last=null;
+const G={p:'♟',n:'♞',b:'♝',r:'♜',q:'♛',k:'♚'},V={p:100,n:320,b:330,r:500,q:900,k:0};
+function ev(d){
+  if(g.in_checkmate())return g.turn()==='w'?-(1e5+d):1e5+d;
+  if(g.in_draw())return 0;
+  let s=0;
+  g.board().forEach((row,r)=>row.forEach((p,c)=>{
+    if(!p)return;let v=V[p.type];
+    if(p.type==='p'||p.type==='n')v+=(3.5-Math.abs(c-3.5))*4+(3.5-Math.abs(r-3.5))*4;
+    if(p.type==='p')v+=(p.color==='w'?6-r:r-1)*5;
+    s+=p.color==='w'?v:-v;
+  }));
+  return s;
+}
+function S(d,a,b){
+  if(d===0||g.game_over())return ev(d);
+  const w=g.turn()==='w',cap=m=>m.captured?V[m.captured]:0;
+  const ms=g.moves({verbose:true}).sort((x,y)=>cap(y)-cap(x));
+  let best=w?-Infinity:Infinity;
+  for(const m of ms){
+    g.move(m);const v=S(d-1,a,b);g.undo();
+    if(w){best=Math.max(best,v);a=Math.max(a,v)}else{best=Math.min(best,v);b=Math.min(b,v)}
+    if(b<=a)break;
+  }
+  return best;
+}
+function ai(){
+  const lvl=+$('lvl').value,ms=g.moves({verbose:true});
+  if(!ms.length)return;
+  let pick;
+  if(lvl===0)pick=ms[Math.random()*ms.length|0];
+  else{
+    const w=g.turn()==='w';let bv=w?-Infinity:Infinity;
+    ms.sort(()=>Math.random()-.5);
+    for(const m of ms){
+      g.move(m);const v=S(lvl-1,-Infinity,Infinity);g.undo();
+      if(w?v>bv:v<bv){bv=v;pick=m}
+    }
+  }
+  last=g.move(pick);
+}
+function think(){
+  if(g.game_over())return render();
+  busy=true;render();
+  setTimeout(()=>{ai();busy=false;render()},60);
+}
+function status(){
+  if(g.in_checkmate())return g.turn()===me?'Checkmate — computer wins.':'Checkmate — you win! 🎉';
+  if(g.in_stalemate())return 'Stalemate — draw.';
+  if(g.in_draw())return 'Draw.';
+  if(busy)return 'Computer is thinking…';
+  return (g.turn()===me?'Your move':'Computer to move')+(g.in_check()?' (check!)':'');
+}
+function render(){
+  const bd=g.board(),el=$('b');el.innerHTML='';
+  for(let i=0;i<8;i++)for(let j=0;j<8;j++){
+    const r=me==='w'?i:7-i,c=me==='w'?j:7-j,sq='abcdefgh'[c]+(8-r),p=bd[r][c];
+    const d=document.createElement('div');
+    d.className='s '+((r+c)%2?'d':'l');
+    if(sq===sel||(last&&(sq===last.from||sq===last.to)))d.classList.add(sq===sel?'sel':'last');
+    const h=hints.find(x=>x.to===sq);
+    if(h){d.classList.add('h');if(p)d.classList.add('c')}
+    if(p){d.textContent=G[p.type];d.classList.add(p.color==='w'?'w':'k')}
+    d.onclick=()=>click(sq);el.appendChild(d);
+  }
+  $('st').textContent=status();
+}
+function click(sq){
+  if(busy||g.game_over()||g.turn()!==me)return;
+  if(sel&&hints.find(h=>h.to===sq)){
+    last=g.move({from:sel,to:sq,promotion:'q'});sel=null;hints=[];return think();
+  }
+  const p=g.get(sq);
+  if(p&&p.color===me){sel=sq;hints=g.moves({square:sq,verbose:true})}else{sel=null;hints=[]}
+  render();
+}
+function reset(){
+  g.reset();me=$('side').value;sel=null;hints=[];last=null;busy=false;
+  me==='b'?think():render();
+}
+$('nw').onclick=reset;$('side').onchange=reset;
+$('un').onclick=()=>{
+  if(busy)return;
+  g.undo();if(g.turn()!==me)g.undo();
+  sel=null;hints=[];last=null;render();
+};
+reset();
+</script></body></html>
